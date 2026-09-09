@@ -1,4 +1,4 @@
-# src/tree_sitter/lib.cr
+# src/ts-edit/lib.cr
 @[Link(ldflags: "#{__DIR__}/../../vendor/build/libtree-sitter.a #{__DIR__}/../../vendor/build/json.o #{__DIR__}/../../vendor/build/crystal_parser.o #{__DIR__}/../../vendor/build/crystal_scanner.o #{__DIR__}/../../vendor/build/crystal_unicode.o #{__DIR__}/../../vendor/build/python_parser.o #{__DIR__}/../../vendor/build/python_scanner.o #{__DIR__}/../../vendor/build/c_parser.o #{__DIR__}/../../vendor/build/bash_parser.o #{__DIR__}/../../vendor/build/bash_scanner.o")]
 lib LibTreeSitter
   alias TSParser = Void*
@@ -8,26 +8,26 @@ lib LibTreeSitter
   alias TSQueryCursor = Void*
 
   struct Point
-    row : UInt32
+    row    : UInt32
     column : UInt32
   end
 
   struct Node
     context : UInt32[4]
-    id : Void*
-    tree : TSTree
+    id      : Void*
+    tree    : TSTree
   end
 
   struct QueryCapture
-    node : Node
+    node  : Node
     index : UInt32
   end
 
   struct QueryMatch
-    id : UInt32
+    id            : UInt32
     pattern_index : UInt16
     capture_count : UInt16
-    captures : QueryCapture*
+    captures      : QueryCapture*
   end
 
   enum QueryPredicateStepType
@@ -37,7 +37,7 @@ lib LibTreeSitter
   end
 
   struct QueryPredicateStep
-    type : QueryPredicateStepType
+    type     : QueryPredicateStepType
     value_id : UInt32
   end
 

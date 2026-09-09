@@ -1,11 +1,11 @@
 # src/ts-edit.cr
 require "option_parser"
-require "./tree_sitter"
-require "./languages"
-require "./editor"
+require "./ts-edit/tree_sitter"
+require "./ts-edit/languages"
+require "./ts-edit/editor"
 
 module TsEdit
-  VERSION = "0.1.0"
+  VERSION = {{ `shards version "#{__DIR__}"`.chomp.stringify }}
 
   USAGE = <<-USAGE
   Usage: ts-edit <command> [options] FILE
@@ -32,26 +32,26 @@ module TsEdit
   USAGE
 
   class Options
-    property language : String? = nil
-    property query : String? = nil
-    property query_file : String? = nil
-    property capture : Array(String) = [] of String
-    property with_text : String? = nil
-    property insert_text : String? = nil
-    property insert_before : Bool = false
-    property write : Bool = false
-    property check : Bool = true
-    property file : String? = nil
+    property language      : String?       = nil
+    property query         : String?       = nil
+    property query_file    : String?       = nil
+    property capture       : Array(String) = [] of String
+    property with_text     : String?       = nil
+    property insert_text   : String?       = nil
+    property insert_before : Bool          = false
+    property write         : Bool          = false
+    property check         : Bool          = true
+    property file          : String?       = nil
   end
 
   def self.run(argv : Array(String)) : Int32
     command = argv.shift?
     case command
-    when "sexp"          then cmd_sexp(argv)
-    when "query"         then cmd_query(argv)
-    when "replace"       then cmd_edit(argv, :replace)
-    when "delete"        then cmd_edit(argv, :delete)
-    when "insert"        then cmd_edit(argv, :insert)
+    when "sexp"    then cmd_sexp(argv)
+    when "query"   then cmd_query(argv)
+    when "replace" then cmd_edit(argv, :replace)
+    when "delete"  then cmd_edit(argv, :delete)
+    when "insert"  then cmd_edit(argv, :insert)
     when "-v", "--version"
       puts VERSION
       0
@@ -94,16 +94,16 @@ module TsEdit
   end
 
   private def self.load(opts : Options) : Tuple(String, TreeSitter::Language, TreeSitter::Tree)
-    file = opts.file.not_nil!
-    source = File.read(file)
+    file     = opts.file.not_nil!
+    source   = File.read(file)
     language = opts.language ? Languages.fetch(opts.language.not_nil!) : Languages.for_path(file)
-    tree = TreeSitter::Parser.new(language).parse(source)
+    tree     = TreeSitter::Parser.new(language).parse(source)
     STDERR.puts "warning: #{file} contains syntax errors" if tree.has_error?
     {source, language, tree}
   end
 
   private def self.build_query(language : TreeSitter::Language, opts : Options) : TreeSitter::Query
-    query = opts.query
+    query      = opts.query
     query_file = opts.query_file
     source = if query && query_file
                raise "pass either --query or --query-file, not both"
@@ -129,13 +129,13 @@ module TsEdit
     opts = Options.new
     finish_parse(base_parser(opts, "Usage: ts-edit query [options] FILE"), opts, argv)
     source, language, tree = load(opts)
-    query = build_query(language, opts)
+    query  = build_query(language, opts)
     filter = opts.capture
-    count = 0
+    count  = 0
     query.matches(tree.root, source).each do |match|
       match.captures.each do |capture|
         next unless filter.empty? || filter.includes?(capture.name)
-        node = capture.node
+        node    = capture.node
         preview = node.text(source).gsub('\n', "\\n")
         preview = preview[0, 57] + "..." if preview.size > 60
         puts "@#{capture.name} #{node.type} [#{node.start_byte}...#{node.end_byte}] #{preview.inspect}"
