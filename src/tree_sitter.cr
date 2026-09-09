@@ -7,7 +7,7 @@ module TreeSitter
 
   class QueryError < Error
     getter offset : UInt32
-    getter kind : LibTreeSitter::QueryError
+    getter kind   : LibTreeSitter::QueryError
 
     def initialize(@offset : UInt32, @kind : LibTreeSitter::QueryError)
       super("invalid query at byte #{offset}: #{kind.to_s.downcase}")
@@ -60,7 +60,7 @@ module TreeSitter
   end
 
   struct Node
-    getter raw : LibTreeSitter::Node
+    getter raw  : LibTreeSitter::Node
     getter tree : Tree
 
     def initialize(@raw : LibTreeSitter::Node, @tree : Tree)
@@ -123,7 +123,7 @@ module TreeSitter
     end
 
     def sexp : String
-      cstr = LibTreeSitter.ts_node_string(@raw)
+      cstr   = LibTreeSitter.ts_node_string(@raw)
       result = String.new(cstr)
       LibC.free(cstr.as(Void*))
       result
@@ -138,7 +138,7 @@ module TreeSitter
   struct Capture
     getter node : Node
     getter name : String
-    getter id : UInt32
+    getter id   : UInt32
 
     def initialize(@node : Node, @name : String, @id : UInt32)
     end
@@ -146,7 +146,7 @@ module TreeSitter
 
   struct Match
     getter pattern_index : Int32
-    getter captures : Array(Capture)
+    getter captures      : Array(Capture)
 
     def initialize(@pattern_index : Int32, @captures : Array(Capture))
     end
@@ -161,18 +161,18 @@ module TreeSitter
 
     def initialize(language : Language, @source : String)
       error_offset = 0_u32
-      error_type = LibTreeSitter::QueryError::None
-      @ptr = LibTreeSitter.ts_query_new(language.ptr, @source, @source.bytesize, pointerof(error_offset), pointerof(error_type))
+      error_type   = LibTreeSitter::QueryError::None
+      @ptr         = LibTreeSitter.ts_query_new(language.ptr, @source, @source.bytesize, pointerof(error_offset), pointerof(error_type))
       raise QueryError.new(error_offset, error_type) if @ptr.null?
       @capture_names = Array(String).new(LibTreeSitter.ts_query_capture_count(@ptr)) do |i|
-        len = 0_u32
+        len  = 0_u32
         cstr = LibTreeSitter.ts_query_capture_name_for_id(@ptr, i, pointerof(len))
         String.new(cstr, len)
       end
     end
 
     def matches(node : Node, source : String) : Array(Match)
-      cursor = LibTreeSitter.ts_query_cursor_new
+      cursor  = LibTreeSitter.ts_query_cursor_new
       results = [] of Match
       begin
         LibTreeSitter.ts_query_cursor_exec(cursor, @ptr, node.raw)
@@ -197,14 +197,14 @@ module TreeSitter
     end
 
     private def string_value(id : UInt32) : String
-      len = 0_u32
+      len  = 0_u32
       cstr = LibTreeSitter.ts_query_string_value_for_id(@ptr, id, pointerof(len))
       String.new(cstr, len)
     end
 
     private def predicates_satisfied?(pattern_index : UInt32, captures : Array(Capture), source : String) : Bool
       step_count = 0_u32
-      steps = LibTreeSitter.ts_query_predicates_for_pattern(@ptr, pattern_index, pointerof(step_count))
+      steps      = LibTreeSitter.ts_query_predicates_for_pattern(@ptr, pattern_index, pointerof(step_count))
       return true if step_count == 0
       i = 0_u32
       while i < step_count
@@ -232,19 +232,19 @@ module TreeSitter
       texts = ->(id : UInt32) { captures.select { |c| c.id == id }.map { |c| c.node.text(source) } }
       case op
       when "eq?", "not-eq?", "any-eq?", "any-not-eq?"
-        values = texts.call(args[0].as(UInt32))
+        values   = texts.call(args[0].as(UInt32))
         expected = args[1].as(String)
-        result = op.starts_with?("any-") ? values.any? { |v| v == expected } : values.all? { |v| v == expected }
+        result   = op.starts_with?("any-") ? values.any? { |v| v == expected } : values.all? { |v| v == expected }
         op.includes?("not") ? !result : result
       when "match?", "not-match?", "any-match?", "any-not-match?"
         values = texts.call(args[0].as(UInt32))
-        regex = Regex.new(args[1].as(String))
+        regex  = Regex.new(args[1].as(String))
         result = op.starts_with?("any-") ? values.any?(&.matches?(regex)) : values.all?(&.matches?(regex))
         op.includes?("not") ? !result : result
       when "any-of?", "not-any-of?"
-        values = texts.call(args[0].as(UInt32))
+        values  = texts.call(args[0].as(UInt32))
         options = args[1..].map(&.as(String))
-        found = values.any? { |v| options.includes?(v) }
+        found   = values.any? { |v| options.includes?(v) }
         op.starts_with?("not-") ? !found : found
       else
         true

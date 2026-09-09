@@ -25,7 +25,7 @@ module Languages
   end
 
   def for_path(path : String) : TreeSitter::Language
-    ext = File.extname(path)
+    ext  = File.extname(path)
     name = EXTENSIONS[ext]? || raise(TreeSitter::Error.new("cannot infer a language from '#{ext}'; pass --language"))
     fetch(name)
   end
