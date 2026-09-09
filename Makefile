@@ -8,7 +8,7 @@ DEPS := vendor/deps
 BUILD := vendor/build
 TS := $(DEPS)/tree-sitter-lib
 GRAMMAR_OBJS := $(BUILD)/json.o $(BUILD)/crystal_parser.o $(BUILD)/crystal_scanner.o $(BUILD)/crystal_unicode.o $(BUILD)/python_parser.o $(BUILD)/python_scanner.o $(BUILD)/c_parser.o $(BUILD)/bash_parser.o $(BUILD)/bash_scanner.o
-SOURCES := $(wildcard src/*.cr src/tree_sitter/*.cr)
+SOURCES := $(wildcard src/*.cr src/ts-edit/*.cr)
 PREFIX ?= /usr/local
 BINDIR := $(PREFIX)/bin
 
