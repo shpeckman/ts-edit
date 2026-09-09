@@ -41,6 +41,15 @@ lib LibTreeSitter
     value_id : UInt32
   end
 
+  struct InputEdit
+    start_byte    : UInt32
+    old_end_byte  : UInt32
+    new_end_byte  : UInt32
+    start_point   : Point
+    old_end_point : Point
+    new_end_point : Point
+  end
+
   enum QueryError
     None      = 0
     Syntax    = 1
@@ -58,6 +67,7 @@ lib LibTreeSitter
 
   fun ts_tree_root_node(tree : TSTree) : Node
   fun ts_tree_delete(tree : TSTree)
+  fun ts_tree_edit(tree : TSTree, edit : InputEdit*)
 
   fun ts_node_type(node : Node) : UInt8*
   fun ts_node_start_byte(node : Node) : UInt32

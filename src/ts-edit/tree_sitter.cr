@@ -30,8 +30,9 @@ module TsEdit
         raise Error.new("tree-sitter rejected the language grammar") unless LibTreeSitter.ts_parser_set_language(@ptr, language.ptr)
       end
 
-      def parse(source : String) : Tree
-        ptr = LibTreeSitter.ts_parser_parse_string(@ptr, Pointer(Void).null, source, source.bytesize)
+      def parse(source : String, old_tree : Tree? = nil) : Tree
+        old = old_tree ? old_tree.ptr : Pointer(Void).null
+        ptr = LibTreeSitter.ts_parser_parse_string(@ptr, old, source, source.bytesize)
         raise Error.new("parsing failed") if ptr.null?
         Tree.new(ptr)
       end
@@ -53,6 +54,10 @@ module TsEdit
 
       def has_error? : Bool
         root.has_error?
+      end
+
+      def edit(edit : LibTreeSitter::InputEdit)
+        LibTreeSitter.ts_tree_edit(@ptr, pointerof(edit))
       end
 
       def finalize
@@ -247,11 +252,47 @@ module TsEdit
           options = args[1..].map(&.as(String))
           found   = values.any? { |v| options.includes?(v) }
           op.starts_with?("not-") ? !found : found
+        when "has-parent?", "not-has-parent?"
+          node   = first_node(captures, args[0].as(UInt32))
+          parent = node.try(&.parent)
+          result = parent ? parent.type == args[1].as(String) : false
+          op.starts_with?("not-") ? !result : result
+        when "has-ancestor?", "not-has-ancestor?"
+          node     = first_node(captures, args[0].as(UInt32))
+          expected = args[1].as(String)
+          current  = node.try(&.parent)
+          result   = false
+          while current
+            if current.type == expected
+              result = true
+              break
+            end
+            current = current.parent
+          end
+          op.starts_with?("not-") ? !result : result
+        when "nth-child?", "not-nth-child?"
+          node   = first_node(captures, args[0].as(UInt32))
+          wanted = args[1].as(String).to_i
+          result = false
+          if node && (parent = node.parent)
+            parent.named_child_count.times do |i|
+              sibling = parent.named_child(i)
+              if sibling && sibling.start_byte == node.start_byte && sibling.end_byte == node.end_byte
+                result = i == wanted
+                break
+              end
+            end
+          end
+          op.starts_with?("not-") ? !result : result
         else
           true
         end
       rescue ex : IndexError | ArgumentError | Regex::Error
         raise Error.new("malformed predicate ##{op}: #{ex.message}")
+      end
+
+      private def first_node(captures : Array(Capture), id : UInt32) : Node?
+        captures.find { |c| c.id == id }.try(&.node)
       end
     end
   end
