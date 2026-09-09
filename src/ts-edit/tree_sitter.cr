@@ -1,9 +1,10 @@
 # src/ts-edit/tree_sitter.cr
+require "./errors"
 require "./lib"
 
 module TsEdit
   module TreeSitter
-    class Error < Exception
+    class Error < ::TsEdit::Error
     end
 
     class QueryError < Error

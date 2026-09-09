@@ -1,0 +1,7 @@
+{
+  "name": "demo",
+  "version": 1,
+  "debug": false,
+  "tags": ["a", "b"],
+  "limits": {"cpu": 4, "mem": 512}
+}

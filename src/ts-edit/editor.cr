@@ -1,4 +1,6 @@
 # src/ts-edit/editor.cr
+require "./errors"
+
 module TsEdit
   struct Edit
     getter start_byte  : Int32
@@ -25,7 +27,7 @@ module TsEdit
       sorted.each_cons(2) do |pair|
         a, b = pair
         if b.start_byte < a.end_byte
-          raise "conflicting edits: [#{a.start_byte}...#{a.end_byte}] overlaps [#{b.start_byte}...#{b.end_byte}]"
+          raise ConflictError.new("conflicting edits: [#{a.start_byte}...#{a.end_byte}] overlaps [#{b.start_byte}...#{b.end_byte}]")
         end
       end
       bytes  = source.to_slice

@@ -1,0 +1,4 @@
+# examples/scripts/tidy_json.txt
+# drop the "debug" pair (with its comma), then sort the remaining pairs
+delete -q '(object (pair key: (string (string_content) @_key)) @pair . ","? @comma (#eq? @_key "debug"))' -c pair -c comma
+sort -q '(pair) @pair' -c pair

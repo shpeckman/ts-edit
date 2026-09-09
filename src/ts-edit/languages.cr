@@ -1,4 +1,5 @@
 # src/ts-edit/languages.cr
+require "./errors"
 require "./tree_sitter"
 
 module TsEdit
@@ -15,11 +16,24 @@ module TsEdit
       ".bash" => "bash",
     }
 
+    @@custom            = Hash(String, Proc(TreeSitter::Language)).new
+    @@custom_extensions = Hash(String, String).new
+
+    def register(name : String, extensions : Array(String) = [] of String, &block : -> TreeSitter::Language) : Nil
+      @@custom[name] = block
+      extensions.each do |ext|
+        @@custom_extensions[ext.starts_with?('.') ? ext : ".#{ext}"] = name
+      end
+    end
+
     def names : Array(String)
-      ["bash", "c", "crystal", "json", "python"]
+      (["bash", "c", "crystal", "json", "python"] + @@custom.keys).sort.uniq
     end
 
     def fetch(name : String) : TreeSitter::Language
+      if factory = @@custom[name]?
+        return factory.call
+      end
       case name
       when "json"
         TreeSitter::Language.new(LibTreeSitter.tree_sitter_json)
@@ -38,7 +52,7 @@ module TsEdit
 
     def for_path(path : String) : TreeSitter::Language
       ext  = File.extname(path)
-      name = EXTENSIONS[ext]? || raise(TreeSitter::Error.new("cannot infer a language from '#{ext}'; pass --language"))
+      name = @@custom_extensions[ext]? || EXTENSIONS[ext]? || raise(TreeSitter::Error.new("cannot infer a language from '#{ext}'; pass an explicit language"))
       fetch(name)
     end
   end

@@ -1,0 +1,4 @@
+# examples/scripts/refactor_python.txt
+# rename greet -> welcome everywhere, then prefix every function still starting with "w"
+replace -q '([(function_definition name: (identifier) @n) (call function: (identifier) @n)] (#eq? @n "greet"))' -c n --with welcome
+wrap -q '(function_definition name: (identifier) @n (#match? @n "^w"))' -c n --prefix 'traced_'

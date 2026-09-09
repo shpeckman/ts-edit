@@ -12,9 +12,17 @@ SOURCES := $(wildcard src/*.cr src/ts-edit/*.cr)
 PREFIX ?= /usr/local
 BINDIR := $(PREFIX)/bin
 
-.PHONY: all clean install uninstall
+.PHONY: all clean install uninstall native spec examples
 
 all: $(BIN)
+
+native: $(BUILD)/libtree-sitter.a $(GRAMMAR_OBJS)
+
+spec: native
+	$(CRYSTAL) spec
+
+examples: native
+	$(CRYSTAL) run examples/library_usage.cr
 
 $(DEPS): vendor/tree-sitter-deps.tar.gz
 	tar xzf $< -C vendor
@@ -43,7 +51,7 @@ $(BUILD)/crystal_unicode.o: $(DEPS)
 
 $(BIN): $(BUILD)/libtree-sitter.a $(GRAMMAR_OBJS) $(SOURCES)
 	mkdir -p bin
-	$(CRYSTAL) build --release --no-debug src/ts-edit.cr -o $(BIN)
+	$(CRYSTAL) build --release --no-debug src/cli.cr -o $(BIN)
 
 install: $(BIN)
 	mkdir -p $(BINDIR)
