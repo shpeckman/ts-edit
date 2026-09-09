@@ -7,10 +7,12 @@ BIN := bin/ts-edit
 DEPS := vendor/deps
 BUILD := vendor/build
 TS := $(DEPS)/tree-sitter-lib
-GRAMMAR_OBJS := $(BUILD)/json.o $(BUILD)/crystal_parser.o $(BUILD)/crystal_scanner.o $(BUILD)/crystal_unicode.o
+GRAMMAR_OBJS := $(BUILD)/json.o $(BUILD)/crystal_parser.o $(BUILD)/crystal_scanner.o $(BUILD)/crystal_unicode.o $(BUILD)/python_parser.o $(BUILD)/python_scanner.o $(BUILD)/c_parser.o $(BUILD)/bash_parser.o $(BUILD)/bash_scanner.o
 SOURCES := $(wildcard src/*.cr src/tree_sitter/*.cr)
+PREFIX ?= /usr/local
+BINDIR := $(PREFIX)/bin
 
-.PHONY: all clean
+.PHONY: all clean install uninstall
 
 all: $(BIN)
 
@@ -27,13 +29,13 @@ $(BUILD)/json.o: $(DEPS)
 	mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) -I$(DEPS)/json -c $(DEPS)/json/parser.c -o $@
 
-$(BUILD)/crystal_parser.o: $(DEPS)
+$(BUILD)/%_parser.o: $(DEPS)
 	mkdir -p $(BUILD)
-	$(CC) $(CFLAGS) -I$(DEPS)/crystal -c $(DEPS)/crystal/parser.c -o $@
+	$(CC) $(CFLAGS) -I$(DEPS)/$* -c $(DEPS)/$*/parser.c -o $@
 
-$(BUILD)/crystal_scanner.o: $(DEPS)
+$(BUILD)/%_scanner.o: $(DEPS)
 	mkdir -p $(BUILD)
-	$(CC) $(CFLAGS) -I$(DEPS)/crystal -c $(DEPS)/crystal/scanner.c -o $@
+	$(CC) $(CFLAGS) -I$(DEPS)/$* -c $(DEPS)/$*/scanner.c -o $@
 
 $(BUILD)/crystal_unicode.o: $(DEPS)
 	mkdir -p $(BUILD)
@@ -42,6 +44,13 @@ $(BUILD)/crystal_unicode.o: $(DEPS)
 $(BIN): $(BUILD)/libtree-sitter.a $(GRAMMAR_OBJS) $(SOURCES)
 	mkdir -p bin
 	$(CRYSTAL) build --release --no-debug src/ts-edit.cr -o $(BIN)
+
+install: $(BIN)
+	mkdir -p $(BINDIR)
+	install -m 755 $(BIN) $(BINDIR)/ts-edit
+
+uninstall:
+	rm -f $(BINDIR)/ts-edit
 
 clean:
 	rm -rf $(BUILD) $(DEPS) bin

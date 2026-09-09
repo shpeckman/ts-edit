@@ -2,13 +2,9 @@
 name: ts-edit
 version: 0.2.0
 
-authors:
-  - shpeckman
-
 targets:
   ts-edit:
     main: src/ts-edit.cr
 
 crystal: ">= 1.10.0"
-
 license: MIT

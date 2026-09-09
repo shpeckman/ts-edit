@@ -1,7 +1,7 @@
 # src/editor.cr
 struct Edit
-  getter start_byte  : Int32
-  getter end_byte    : Int32
+  getter start_byte : Int32
+  getter end_byte : Int32
   getter replacement : String
 
   def initialize(@start_byte : Int32, @end_byte : Int32, @replacement : String)
@@ -27,8 +27,8 @@ module Editor
         raise "conflicting edits: [#{a.start_byte}...#{a.end_byte}] overlaps [#{b.start_byte}...#{b.end_byte}]"
       end
     end
-    bytes  = source.to_slice
-    io     = IO::Memory.new(bytes.size + sorted.sum(0) { |e| e.replacement.bytesize })
+    bytes = source.to_slice
+    io = IO::Memory.new(bytes.size + sorted.sum(0) { |e| e.replacement.bytesize })
     cursor = 0
     sorted.each do |edit|
       io.write bytes[cursor...edit.start_byte]
