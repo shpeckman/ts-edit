@@ -1,9 +1,14 @@
+# shard.yml
 name: ts-edit
-version: 0.1.0
+version: 0.2.0
 
 authors:
-  - shpeckman <geelenrobin@proton.me>
+  - shpeckman
 
-crystal: '>= 1.21.0'
+targets:
+  ts-edit:
+    main: src/ts-edit.cr
+
+crystal: ">= 1.10.0"
 
 license: MIT
