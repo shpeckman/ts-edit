@@ -9,10 +9,11 @@ module TsEdit
     extend self
 
     struct Result
-      getter source : String
-      getter edits  : Int32
+      getter source    : String
+      getter edits     : Int32
+      getter extracted : Array(String)
 
-      def initialize(@source : String, @edits : Int32)
+      def initialize(@source : String, @edits : Int32, @extracted : Array(String) = [] of String)
       end
     end
 
@@ -28,7 +29,7 @@ module TsEdit
             edits << Edit.new(cap.node.start_byte, cap.node.end_byte, replacement)
           end
         end
-        {edits, seen}
+        {edits, seen, [] of String}
       end
     end
 
@@ -57,7 +58,7 @@ module TsEdit
           end
           edits << Edit.new(*absorb_line(cluster_start, cluster_stop, src), "")
         end
-        {edits, seen}
+        {edits, seen, [] of String}
       end
     end
 
@@ -78,7 +79,7 @@ module TsEdit
             end
           end
         end
-        {edits, seen}
+        {edits, seen, [] of String}
       end
     end
 
@@ -97,7 +98,7 @@ module TsEdit
             edits << Edit.new(node.end_byte, node.end_byte, suffix) if suffix
           end
         end
-        {edits, seen}
+        {edits, seen, [] of String}
       end
     end
 
@@ -113,7 +114,7 @@ module TsEdit
           edits << Edit.new(a[0].start_byte, a[0].end_byte, b[0].text(src))
           edits << Edit.new(b[0].start_byte, b[0].end_byte, a[0].text(src))
         end
-        {edits, seen}
+        {edits, seen, [] of String}
       end
     end
 
@@ -135,7 +136,7 @@ module TsEdit
           edits << Edit.new(del_start, del_end, "")
           edits << Edit.new(point, point, insertion_text(node.text(src), to_nodes[0], position, src))
         end
-        {edits, seen}
+        {edits, seen, [] of String}
       end
     end
 
@@ -166,7 +167,7 @@ module TsEdit
             edits << Edit.new(point, point, insertion_text(node.text(src), target_nodes[0], position, src))
           end
         end
-        {edits, seen}
+        {edits, seen, [] of String}
       end
     end
 
@@ -192,7 +193,7 @@ module TsEdit
             edits << Edit.new(node.start_byte, node.end_byte, sorted[i]) unless node.text(src) == sorted[i]
           end
         end
-        {edits, seen}
+        {edits, seen, [] of String}
       end
     end
 
@@ -221,7 +222,74 @@ module TsEdit
             end
           end
         end
-        {edits, seen}
+        {edits, seen, [] of String}
+      end
+    end
+
+    def unwrap(source : String, language : TreeSitter::Language, query : String, outer : String, inner : String, *, skip : Int32 = 0, limit : Int32? = nil, check : Bool = true) : Result
+      run(source, language, query, skip, limit, check, label([outer, inner])) do |matches, src, _tree|
+        edits = [] of Edit
+        seen  = false
+        matches.each do |match|
+          outer_nodes = nodes_for(match, outer)
+          inner_nodes = nodes_for(match, inner)
+          next unless outer_nodes.size == 1 && inner_nodes.size == 1
+          seen = true
+          edits << Edit.new(outer_nodes[0].start_byte, outer_nodes[0].end_byte, inner_nodes[0].text(src))
+        end
+        {edits, seen, [] of String}
+      end
+    end
+
+    def overwrite(source : String, language : TreeSitter::Language, query : String, target : String, source_capture : String, *, skip : Int32 = 0, limit : Int32? = nil, check : Bool = true) : Result
+      run(source, language, query, skip, limit, check, label([target, source_capture])) do |matches, src, _tree|
+        edits = [] of Edit
+        seen  = false
+        matches.each do |match|
+          target_nodes = nodes_for(match, target)
+          source_nodes = nodes_for(match, source_capture)
+          next unless target_nodes.size == 1 && source_nodes.size == 1
+          seen = true
+          edits << Edit.new(target_nodes[0].start_byte, target_nodes[0].end_byte, source_nodes[0].text(src))
+        end
+        {edits, seen, [] of String}
+      end
+    end
+
+    def duplicate(source : String, language : TreeSitter::Language, query : String, capture : String | Array(String), *, position : Symbol = :after, skip : Int32 = 0, limit : Int32? = nil, check : Bool = true) : Result
+      validate_position(position)
+      names = normalize(capture)
+      run(source, language, query, skip, limit, check, label(names)) do |matches, src, _tree|
+        edits = [] of Edit
+        seen  = false
+        matches.each do |match|
+          match.captures.each do |cap|
+            next unless names.includes?(cap.name)
+            seen  = true
+            node  = cap.node
+            point = position == :before ? node.start_byte : node.end_byte
+            edits << Edit.new(point, point, insertion_text(node.text(src), node, position, src))
+          end
+        end
+        {edits, seen, [] of String}
+      end
+    end
+
+    def extract(source : String, language : TreeSitter::Language, query : String, capture : String | Array(String), replacement : String, *, skip : Int32 = 0, limit : Int32? = nil, check : Bool = true) : Result
+      names = normalize(capture)
+      run(source, language, query, skip, limit, check, label(names)) do |matches, src, _tree|
+        edits     = [] of Edit
+        seen      = false
+        extracted = [] of String
+        matches.each do |match|
+          match.captures.each do |cap|
+            next unless names.includes?(cap.name)
+            seen = true
+            extracted << cap.node.text(src)
+            edits << Edit.new(cap.node.start_byte, cap.node.end_byte, replacement)
+          end
+        end
+        {edits, seen, extracted}
       end
     end
 
@@ -239,16 +307,16 @@ module TsEdit
       end
     end
 
-    private def run(source : String, language : TreeSitter::Language, query_source : String, skip : Int32, limit : Int32?, check : Bool, label : String, & : Array(TreeSitter::Match), String, TreeSitter::Tree -> Tuple(Array(Edit), Bool)) : Result
+    private def run(source : String, language : TreeSitter::Language, query_source : String, skip : Int32, limit : Int32?, check : Bool, label : String, & : Array(TreeSitter::Match), String, TreeSitter::Tree -> Tuple(Array(Edit), Bool, Array(String))) : Result
       parser  = TreeSitter::Parser.new(language)
       tree    = parser.parse(source)
       query   = TreeSitter::Query.new(language, query_source)
       matches = query.matches(tree.root, source)
       matches = matches[skip..] if skip > 0
       matches = matches.first(limit) if limit
-      edits, seen = yield matches, source, tree
+      edits, seen, extracted = yield matches, source, tree
       raise NoMatchesError.new("no matches for capture(s) #{label}") unless seen
-      return Result.new(source, 0) if edits.empty?
+      return Result.new(source, 0, extracted) if edits.empty?
       result = Editor.apply(source, edits)
       if check
         input_edit = Editor.input_edit(source, result, edits)
@@ -256,7 +324,7 @@ module TsEdit
         new_tree = parser.parse(result, tree)
         raise SyntaxGuardError.new("the edit would introduce syntax errors") if new_tree.has_error?
       end
-      Result.new(result, edits.uniq.size)
+      Result.new(result, edits.uniq.size, extracted)
     end
 
     private def nodes_for(match : TreeSitter::Match, name : String) : Array(TreeSitter::Node)

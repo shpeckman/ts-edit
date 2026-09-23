@@ -18,76 +18,93 @@ module TsEdit
     reorder   move captured nodes before or after a node matched by a second query
     sort      sort captured sibling nodes by their text
     dedupe    delete duplicate captured sibling nodes, keeping the first
+    unwrap    replace an outer capture with the text of an inner capture
+    overwrite replace a target capture with the text of a source capture
+    duplicate duplicate captured nodes before or after themselves
+    extract   replace a capture and save its original text
     apply     run a script of edit operations (one command per line) atomically
 
   Selection:
-    -q, --query QUERY       tree-sitter query string
-    -F, --query-file PATH   read the query from a file
-    -c, --capture NAME      capture to act on (repeatable)
-        --skip N            skip the first N matches
-        --limit N           act on at most N matches
+    -q, --query QUERY      tree-sitter query string
+    -F, --query-file PATH  read the query from a file
+    -c, --capture NAME     capture to act on (repeatable)
+        --skip N           skip the first N matches
+        --limit N          act on at most N matches
 
   Command-specific:
     swap      -c FIRST -c SECOND
     move      --from CAP --to CAP [--position before|after]
     reorder   -c CAP --to-query QUERY --to-capture CAP [--position before|after]
+    unwrap    --outer CAP --inner CAP
+    overwrite --target CAP --source CAP
     wrap      --prefix TEXT and/or --suffix TEXT
     insert    --before TEXT or --after TEXT
     replace   --with TEXT
+    extract   -c CAP [--with TEXT] [--extract-to PATH]
+    duplicate -c CAP [--position before|after]
     sort      [--reverse]
     apply     -s, --script PATH
 
   Other options:
-    -l, --language NAME     language (bash, c, crystal, json, python); inferred from the FILE extension otherwise
-    -w, --write             write changes back to each FILE (default: print the result to stdout)
-        --no-check          do not reparse the result to reject edits that introduce syntax errors
-    -h, --help              show help
-    -v, --version           show version
+    -l, --language NAME    language (bash, c, crystal, json, python); inferred from the FILE extension otherwise
+    -w, --write            write changes back to each FILE (default: print the result to stdout)
+        --no-check         do not reparse the result to reject edits that introduce syntax errors
+    -h, --help             show help
+    -v, --version          show version
 
   Extra query predicates: #has-parent?, #has-ancestor?, #nth-child? (and their not- variants)
   USAGE
 
-  EDIT_COMMANDS = {:replace, :delete, :insert, :wrap, :swap, :move, :reorder, :sort, :dedupe}
+  EDIT_COMMANDS = {:replace, :delete, :insert, :wrap, :swap, :move, :reorder, :sort, :dedupe, :unwrap, :overwrite, :duplicate, :extract}
 
   class Options
-    property language      : String?       = nil
-    property query         : String?       = nil
-    property query_file    : String?       = nil
-    property capture       : Array(String) = [] of String
-    property with_text     : String?       = nil
-    property insert_text   : String?       = nil
-    property insert_before : Bool          = false
-    property prefix        : String?       = nil
-    property suffix        : String?       = nil
-    property from          : String?       = nil
-    property to            : String?       = nil
-    property to_query      : String?       = nil
-    property to_capture    : String?       = nil
-    property position      : String        = "after"
-    property reverse       : Bool          = false
-    property skip          : Int32         = 0
-    property limit         : Int32?        = nil
-    property script        : String?       = nil
-    property write         : Bool          = false
-    property check         : Bool          = true
-    property files         : Array(String) = [] of String
+    property language       : String?       = nil
+    property query          : String?       = nil
+    property query_file     : String?       = nil
+    property capture        : Array(String) = [] of String
+    property with_text      : String?       = nil
+    property insert_text    : String?       = nil
+    property insert_before  : Bool          = false
+    property prefix         : String?       = nil
+    property suffix         : String?       = nil
+    property from           : String?       = nil
+    property to             : String?       = nil
+    property to_query       : String?       = nil
+    property to_capture     : String?       = nil
+    property outer          : String?       = nil
+    property inner          : String?       = nil
+    property target         : String?       = nil
+    property source_capture : String?       = nil
+    property position       : String        = "after"
+    property reverse        : Bool          = false
+    property skip           : Int32         = 0
+    property limit          : Int32?        = nil
+    property extract_to     : String?       = nil
+    property script         : String?       = nil
+    property write          : Bool          = false
+    property check          : Bool          = true
+    property files          : Array(String) = [] of String
   end
 
   def self.run(argv : Array(String)) : Int32
     command = argv.shift?
     case command
-    when "sexp"    then cmd_sexp(argv)
-    when "query"   then cmd_query(argv)
-    when "replace" then cmd_edit(argv, :replace)
-    when "delete"  then cmd_edit(argv, :delete)
-    when "insert"  then cmd_edit(argv, :insert)
-    when "wrap"    then cmd_edit(argv, :wrap)
-    when "swap"    then cmd_edit(argv, :swap)
-    when "move"    then cmd_edit(argv, :move)
-    when "reorder" then cmd_edit(argv, :reorder)
-    when "sort"    then cmd_edit(argv, :sort)
-    when "dedupe"  then cmd_edit(argv, :dedupe)
-    when "apply"   then cmd_apply(argv)
+    when "sexp"      then cmd_sexp(argv)
+    when "query"     then cmd_query(argv)
+    when "replace"   then cmd_edit(argv, :replace)
+    when "delete"    then cmd_edit(argv, :delete)
+    when "insert"    then cmd_edit(argv, :insert)
+    when "wrap"      then cmd_edit(argv, :wrap)
+    when "swap"      then cmd_edit(argv, :swap)
+    when "move"      then cmd_edit(argv, :move)
+    when "reorder"   then cmd_edit(argv, :reorder)
+    when "sort"      then cmd_edit(argv, :sort)
+    when "dedupe"    then cmd_edit(argv, :dedupe)
+    when "unwrap"    then cmd_edit(argv, :unwrap)
+    when "overwrite" then cmd_edit(argv, :overwrite)
+    when "duplicate" then cmd_edit(argv, :duplicate)
+    when "extract"   then cmd_edit(argv, :extract)
+    when "apply"     then cmd_apply(argv)
     when "-v", "--version"
       puts VERSION
       0
@@ -114,7 +131,7 @@ module TsEdit
       parser.on("-q QUERY", "--query QUERY", "tree-sitter query string") { |v| opts.query = v }
       parser.on("-F PATH", "--query-file PATH", "read the query from a file") { |v| opts.query_file = v }
       parser.on("-c NAME", "--capture NAME", "capture to act on (repeatable)") { |v| opts.capture << v }
-      parser.on("--with TEXT", "replacement text (replace)") { |v| opts.with_text = v }
+      parser.on("--with TEXT", "replacement text (replace, extract)") { |v| opts.with_text = v }
       parser.on("--before TEXT", "insert before the capture (insert)") { |v| opts.insert_text = v; opts.insert_before = true }
       parser.on("--after TEXT", "insert after the capture (insert)") { |v| opts.insert_text = v; opts.insert_before = false }
       parser.on("--prefix TEXT", "text inserted at the start of the capture (wrap)") { |v| opts.prefix = v }
@@ -123,7 +140,12 @@ module TsEdit
       parser.on("--to CAP", "capture to move next to (move)") { |v| opts.to = v }
       parser.on("--to-query QUERY", "query locating the destination (reorder)") { |v| opts.to_query = v }
       parser.on("--to-capture CAP", "capture marking the destination (reorder)") { |v| opts.to_capture = v }
-      parser.on("--position POS", "before or after (move, reorder; default after)") { |v| opts.position = v }
+      parser.on("--outer CAP", "outer wrapper capture (unwrap)") { |v| opts.outer = v }
+      parser.on("--inner CAP", "inner content capture (unwrap)") { |v| opts.inner = v }
+      parser.on("--target CAP", "capture to be replaced (overwrite)") { |v| opts.target = v }
+      parser.on("--source CAP", "capture providing new text (overwrite)") { |v| opts.source_capture = v }
+      parser.on("--extract-to PATH", "file to append extracted text to (extract)") { |v| opts.extract_to = v }
+      parser.on("--position POS", "before or after (move, reorder, duplicate; default after)") { |v| opts.position = v }
       parser.on("--reverse", "sort descending (sort)") { opts.reverse = true }
       parser.on("--skip N", "skip the first N matches") { |v| opts.skip = v.to_i }
       parser.on("--limit N", "act on at most N matches") { |v| opts.limit = v.to_i }
@@ -198,6 +220,20 @@ module TsEdit
     when :dedupe
       raise "missing --capture NAME" if opts.capture.empty?
       Ops.dedupe(source, language, query, opts.capture, skip: opts.skip, limit: opts.limit, check: opts.check)
+    when :unwrap
+      raise "missing --outer CAPTURE" unless opts.outer
+      raise "missing --inner CAPTURE" unless opts.inner
+      Ops.unwrap(source, language, query, opts.outer.not_nil!, opts.inner.not_nil!, skip: opts.skip, limit: opts.limit, check: opts.check)
+    when :overwrite
+      raise "missing --target CAPTURE" unless opts.target
+      raise "missing --source CAPTURE" unless opts.source_capture
+      Ops.overwrite(source, language, query, opts.target.not_nil!, opts.source_capture.not_nil!, skip: opts.skip, limit: opts.limit, check: opts.check)
+    when :duplicate
+      raise "missing --capture NAME" if opts.capture.empty?
+      Ops.duplicate(source, language, query, opts.capture, position: parse_position(opts), skip: opts.skip, limit: opts.limit, check: opts.check)
+    when :extract
+      raise "missing --capture NAME" if opts.capture.empty?
+      Ops.extract(source, language, query, opts.capture, opts.with_text || "", skip: opts.skip, limit: opts.limit, check: opts.check)
     else
       raise "unknown edit command: #{command}"
     end
@@ -222,6 +258,20 @@ module TsEdit
         puts unless result.ends_with?('\n')
       else
         print result
+      end
+    end
+  end
+
+  private def self.handle_extractions(file : String, result : Ops::Result, opts : Options) : Nil
+    return if result.extracted.empty?
+    if path = opts.extract_to
+      File.open(path, "a") do |f|
+        result.extracted.each { |ext| f.puts ext }
+      end
+    else
+      result.extracted.each do |ext|
+        puts "--- Extracted from #{file} ---"
+        puts ext
       end
     end
   end
@@ -290,6 +340,7 @@ module TsEdit
     source, language = load_source(file, opts)
     result = run_op(command, opts, source, language)
     output(file, source, result.source, result.edits, opts)
+    handle_extractions(file, result, opts)
     true
   rescue ex : SyntaxGuardError
     STDERR.puts "#{file}: error: refusing to apply: #{ex.message} (use --no-check to force)"
@@ -385,6 +436,7 @@ module TsEdit
       end
       edit_count += result.edits
       current = result.source
+      handle_extractions(file, result, opts)
     end
     output(file, source, current, edit_count, outer)
     true

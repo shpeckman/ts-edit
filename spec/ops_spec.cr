@@ -81,6 +81,36 @@ describe TsEdit::Ops do
     result.source.should eq %(["a", "b"])
   end
 
+  it "unwraps an inner capture by removing its outer wrapper" do
+    py_src = "print(calculate(10))"
+    query  = "((call function: (identifier) @_f arguments: (argument_list (call) @inner)) @outer (#eq? @_f \"print\"))"
+    result = TsEdit::Ops.unwrap(py_src, lang("python"), query, "outer", "inner")
+    result.source.should eq "calculate(10)"
+  end
+
+  it "overwrites a target with a source capture" do
+    src    = "x = y + 1\n"
+    query  = "(assignment left: (identifier) @target right: (binary_operator left: (identifier) @source right: (integer)))"
+    result = TsEdit::Ops.overwrite(src, lang("python"), query, "target", "source")
+    result.source.should eq "y = y + 1\n"
+  end
+
+  it "duplicates a capture" do
+    src    = "def greet(name):\n    return name\n"
+    query  = "(function_definition name: (identifier) @n (#eq? @n \"greet\")) @func"
+    result = TsEdit::Ops.duplicate(src, lang("python"), query, "func")
+    result.source.scan(/def greet/).size.should eq 2
+  end
+
+  it "extracts a capture and returns its original text" do
+    src    = "def greet():\n    pass\n"
+    query  = "(function_definition name: (identifier) @n (#eq? @n \"greet\")) @func"
+    result = TsEdit::Ops.extract(src, lang("python"), query, "func", "pass")
+    result.source.should contain "pass"
+    result.source.should_not contain "def greet():"
+    result.extracted.first.should eq "def greet():\n    pass"
+  end
+
   it "honors skip and limit" do
     result = TsEdit::Ops.replace(py, lang("python"), "(function_definition name: (identifier) @n)", "n", "x", skip: 1, limit: 1)
     result.source.should contain "def greet"
