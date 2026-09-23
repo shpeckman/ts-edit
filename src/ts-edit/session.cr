@@ -1,28 +1,40 @@
-# src/ts-edit/ops.cr
+# src/ts-edit/session.cr
 require "set"
 require "./errors"
 require "./tree_sitter"
 require "./editor"
 
 module TsEdit
-  module Ops
-    extend self
+  class Session
+    getter source     : String
+    getter language   : TreeSitter::Language
+    getter tree       : TreeSitter::Tree
+    getter edit_count : Int32         = 0
+    getter extracted  : Array(String) = [] of String
+    property check    : Bool
 
-    struct Result
-      getter source    : String
-      getter edits     : Int32
-      getter extracted : Array(String)
-
-      def initialize(@source : String, @edits : Int32, @extracted : Array(String) = [] of String)
-      end
+    def initialize(@source : String, @language : TreeSitter::Language, @check : Bool = true)
+      @parser = TreeSitter::Parser.new(@language)
+      @tree   = @parser.parse(@source)
+      raise SyntaxGuardError.new("initial source has syntax errors") if @check && @tree.has_error?
     end
 
-    def replace(source : String, language : TreeSitter::Language, query : String, capture : String | Array(String), replacement : String, *, skip : Int32 = 0, limit : Int32? = nil, check : Bool = true) : Result
+    def clear_extracted : self
+      @extracted.clear
+      self
+    end
+
+    def replace(query_source : String, capture : String | Array(String), replacement : String, *, skip : Int32 = 0, limit : Int32? = nil, check : Bool? = nil) : self
+      replace(query_source, capture, skip: skip, limit: limit, check: check) { replacement }
+    end
+
+    def replace(query_source : String, capture : String | Array(String), *, skip : Int32 = 0, limit : Int32? = nil, check : Bool? = nil, &block : TreeSitter::Match -> String) : self
       names = normalize(capture)
-      run(source, language, query, skip, limit, check, label(names)) do |matches, src, _tree|
+      run(query_source, skip, limit, check_flag(check), label(names)) do |matches, src, _tree|
         edits = [] of Edit
         seen  = false
         matches.each do |match|
+          replacement = block.call(match)
           match.captures.each do |cap|
             next unless names.includes?(cap.name)
             seen = true
@@ -33,9 +45,9 @@ module TsEdit
       end
     end
 
-    def delete(source : String, language : TreeSitter::Language, query : String, capture : String | Array(String), *, skip : Int32 = 0, limit : Int32? = nil, check : Bool = true) : Result
+    def delete(query_source : String, capture : String | Array(String), *, skip : Int32 = 0, limit : Int32? = nil, check : Bool? = nil) : self
       names = normalize(capture)
-      run(source, language, query, skip, limit, check, label(names)) do |matches, src, _tree|
+      run(query_source, skip, limit, check_flag(check), label(names)) do |matches, src, _tree|
         edits = [] of Edit
         seen  = false
         matches.each do |match|
@@ -62,12 +74,17 @@ module TsEdit
       end
     end
 
-    def insert(source : String, language : TreeSitter::Language, query : String, capture : String | Array(String), text : String, *, before : Bool = false, skip : Int32 = 0, limit : Int32? = nil, check : Bool = true) : Result
+    def insert(query_source : String, capture : String | Array(String), text : String, *, before : Bool = false, skip : Int32 = 0, limit : Int32? = nil, check : Bool? = nil) : self
+      insert(query_source, capture, before: before, skip: skip, limit: limit, check: check) { text }
+    end
+
+    def insert(query_source : String, capture : String | Array(String), *, before : Bool = false, skip : Int32 = 0, limit : Int32? = nil, check : Bool? = nil, &block : TreeSitter::Match -> String) : self
       names = normalize(capture)
-      run(source, language, query, skip, limit, check, label(names)) do |matches, src, _tree|
+      run(query_source, skip, limit, check_flag(check), label(names)) do |matches, src, _tree|
         edits = [] of Edit
         seen  = false
         matches.each do |match|
+          text = block.call(match)
           match.captures.each do |cap|
             next unless names.includes?(cap.name)
             seen = true
@@ -83,10 +100,10 @@ module TsEdit
       end
     end
 
-    def wrap(source : String, language : TreeSitter::Language, query : String, capture : String | Array(String), *, prefix : String? = nil, suffix : String? = nil, skip : Int32 = 0, limit : Int32? = nil, check : Bool = true) : Result
+    def wrap(query_source : String, capture : String | Array(String), *, prefix : String? = nil, suffix : String? = nil, skip : Int32 = 0, limit : Int32? = nil, check : Bool? = nil) : self
       raise Error.new("wrap needs a prefix and/or suffix") if prefix.nil? && suffix.nil?
       names = normalize(capture)
-      run(source, language, query, skip, limit, check, label(names)) do |matches, src, _tree|
+      run(query_source, skip, limit, check_flag(check), label(names)) do |matches, src, _tree|
         edits = [] of Edit
         seen  = false
         matches.each do |match|
@@ -102,8 +119,8 @@ module TsEdit
       end
     end
 
-    def swap(source : String, language : TreeSitter::Language, query : String, first : String, second : String, *, skip : Int32 = 0, limit : Int32? = nil, check : Bool = true) : Result
-      run(source, language, query, skip, limit, check, label([first, second])) do |matches, src, _tree|
+    def swap(query_source : String, first : String, second : String, *, skip : Int32 = 0, limit : Int32? = nil, check : Bool? = nil) : self
+      run(query_source, skip, limit, check_flag(check), label([first, second])) do |matches, src, _tree|
         edits = [] of Edit
         seen  = false
         matches.each do |match|
@@ -118,9 +135,9 @@ module TsEdit
       end
     end
 
-    def move(source : String, language : TreeSitter::Language, query : String, from : String, to : String, *, position : Symbol = :after, skip : Int32 = 0, limit : Int32? = nil, check : Bool = true) : Result
+    def move(query_source : String, from : String, to : String, *, position : Symbol = :after, skip : Int32 = 0, limit : Int32? = nil, check : Bool? = nil) : self
       validate_position(position)
-      run(source, language, query, skip, limit, check, label([from, to])) do |matches, src, _tree|
+      run(query_source, skip, limit, check_flag(check), label([from, to])) do |matches, src, _tree|
         edits = [] of Edit
         seen  = false
         matches.each do |match|
@@ -140,11 +157,11 @@ module TsEdit
       end
     end
 
-    def reorder(source : String, language : TreeSitter::Language, query : String, capture : String | Array(String), to_query : String, to_capture : String, *, position : Symbol = :after, skip : Int32 = 0, limit : Int32? = nil, check : Bool = true) : Result
+    def reorder(query_source : String, capture : String | Array(String), to_query : String, to_capture : String, *, position : Symbol = :after, skip : Int32 = 0, limit : Int32? = nil, check : Bool? = nil) : self
       validate_position(position)
       names = normalize(capture)
-      run(source, language, query, skip, limit, check, label(names)) do |matches, src, tree|
-        target_query = TreeSitter::Query.new(language, to_query)
+      run(query_source, skip, limit, check_flag(check), label(names)) do |matches, src, tree|
+        target_query = TreeSitter::Query.new(@language, to_query)
         target_nodes = [] of TreeSitter::Node
         target_query.matches(tree.root, src).each do |match|
           target_nodes.concat(nodes_for(match, to_capture))
@@ -171,9 +188,9 @@ module TsEdit
       end
     end
 
-    def sort(source : String, language : TreeSitter::Language, query : String, capture : String | Array(String), *, reverse : Bool = false, skip : Int32 = 0, limit : Int32? = nil, check : Bool = true) : Result
+    def sort(query_source : String, capture : String | Array(String), *, reverse : Bool = false, skip : Int32 = 0, limit : Int32? = nil, check : Bool? = nil) : self
       names = normalize(capture)
-      run(source, language, query, skip, limit, check, label(names)) do |matches, src, _tree|
+      run(query_source, skip, limit, check_flag(check), label(names)) do |matches, src, _tree|
         nodes = [] of TreeSitter::Node
         seen  = false
         matches.each do |match|
@@ -197,9 +214,9 @@ module TsEdit
       end
     end
 
-    def dedupe(source : String, language : TreeSitter::Language, query : String, capture : String | Array(String), *, skip : Int32 = 0, limit : Int32? = nil, check : Bool = true) : Result
+    def dedupe(query_source : String, capture : String | Array(String), *, skip : Int32 = 0, limit : Int32? = nil, check : Bool? = nil) : self
       names = normalize(capture)
-      run(source, language, query, skip, limit, check, label(names)) do |matches, src, _tree|
+      run(query_source, skip, limit, check_flag(check), label(names)) do |matches, src, _tree|
         nodes = [] of TreeSitter::Node
         seen  = false
         matches.each do |match|
@@ -226,8 +243,8 @@ module TsEdit
       end
     end
 
-    def unwrap(source : String, language : TreeSitter::Language, query : String, outer : String, inner : String, *, skip : Int32 = 0, limit : Int32? = nil, check : Bool = true) : Result
-      run(source, language, query, skip, limit, check, label([outer, inner])) do |matches, src, _tree|
+    def unwrap(query_source : String, outer : String, inner : String, *, skip : Int32 = 0, limit : Int32? = nil, check : Bool? = nil) : self
+      run(query_source, skip, limit, check_flag(check), label([outer, inner])) do |matches, src, _tree|
         edits = [] of Edit
         seen  = false
         matches.each do |match|
@@ -241,8 +258,8 @@ module TsEdit
       end
     end
 
-    def overwrite(source : String, language : TreeSitter::Language, query : String, target : String, source_capture : String, *, skip : Int32 = 0, limit : Int32? = nil, check : Bool = true) : Result
-      run(source, language, query, skip, limit, check, label([target, source_capture])) do |matches, src, _tree|
+    def overwrite(query_source : String, target : String, source_capture : String, *, skip : Int32 = 0, limit : Int32? = nil, check : Bool? = nil) : self
+      run(query_source, skip, limit, check_flag(check), label([target, source_capture])) do |matches, src, _tree|
         edits = [] of Edit
         seen  = false
         matches.each do |match|
@@ -256,10 +273,10 @@ module TsEdit
       end
     end
 
-    def duplicate(source : String, language : TreeSitter::Language, query : String, capture : String | Array(String), *, position : Symbol = :after, skip : Int32 = 0, limit : Int32? = nil, check : Bool = true) : Result
+    def duplicate(query_source : String, capture : String | Array(String), *, position : Symbol = :after, skip : Int32 = 0, limit : Int32? = nil, check : Bool? = nil) : self
       validate_position(position)
       names = normalize(capture)
-      run(source, language, query, skip, limit, check, label(names)) do |matches, src, _tree|
+      run(query_source, skip, limit, check_flag(check), label(names)) do |matches, src, _tree|
         edits = [] of Edit
         seen  = false
         matches.each do |match|
@@ -275,22 +292,31 @@ module TsEdit
       end
     end
 
-    def extract(source : String, language : TreeSitter::Language, query : String, capture : String | Array(String), replacement : String, *, skip : Int32 = 0, limit : Int32? = nil, check : Bool = true) : Result
+    def extract(query_source : String, capture : String | Array(String), replacement : String, *, skip : Int32 = 0, limit : Int32? = nil, check : Bool? = nil) : self
+      extract(query_source, capture, skip: skip, limit: limit, check: check) { replacement }
+    end
+
+    def extract(query_source : String, capture : String | Array(String), *, skip : Int32 = 0, limit : Int32? = nil, check : Bool? = nil, &block : TreeSitter::Match -> String) : self
       names = normalize(capture)
-      run(source, language, query, skip, limit, check, label(names)) do |matches, src, _tree|
-        edits     = [] of Edit
-        seen      = false
-        extracted = [] of String
+      run(query_source, skip, limit, check_flag(check), label(names)) do |matches, src, _tree|
+        edits = [] of Edit
+        seen  = false
+        ext   = [] of String
         matches.each do |match|
+          replacement = block.call(match)
           match.captures.each do |cap|
             next unless names.includes?(cap.name)
             seen = true
-            extracted << cap.node.text(src)
+            ext << cap.node.text(src)
             edits << Edit.new(cap.node.start_byte, cap.node.end_byte, replacement)
           end
         end
-        {edits, seen, extracted}
+        {edits, seen, ext}
       end
+    end
+
+    private def check_flag(local : Bool?) : Bool
+      local.nil? ? @check : local
     end
 
     private def normalize(capture : String | Array(String)) : Array(String)
@@ -307,24 +333,33 @@ module TsEdit
       end
     end
 
-    private def run(source : String, language : TreeSitter::Language, query_source : String, skip : Int32, limit : Int32?, check : Bool, label : String, & : Array(TreeSitter::Match), String, TreeSitter::Tree -> Tuple(Array(Edit), Bool, Array(String))) : Result
-      parser  = TreeSitter::Parser.new(language)
-      tree    = parser.parse(source)
-      query   = TreeSitter::Query.new(language, query_source)
-      matches = query.matches(tree.root, source)
+    private def run(query_source : String, skip : Int32, limit : Int32?, check : Bool, label : String, & : Array(TreeSitter::Match), String, TreeSitter::Tree -> Tuple(Array(Edit), Bool, Array(String))) : self
+      query   = TreeSitter::Query.new(@language, query_source)
+      matches = query.matches(@tree.root, @source)
       matches = matches[skip..] if skip > 0
       matches = matches.first(limit) if limit
-      edits, seen, extracted = yield matches, source, tree
+
+      edits, seen, extracted_texts = yield matches, @source, @tree
+      @extracted.concat(extracted_texts)
+
       raise NoMatchesError.new("no matches for capture(s) #{label}") unless seen
-      return Result.new(source, 0, extracted) if edits.empty?
-      result = Editor.apply(source, edits)
-      if check
-        input_edit = Editor.input_edit(source, result, edits)
-        tree.edit(input_edit)
-        new_tree = parser.parse(result, tree)
-        raise SyntaxGuardError.new("the edit would introduce syntax errors") if new_tree.has_error?
+      return self if edits.empty?
+
+      result = Editor.apply(@source, edits)
+
+      input_edit = Editor.input_edit(@source, result, edits)
+      @tree.edit(input_edit)
+      new_tree = @parser.parse(result, @tree)
+
+      if check && new_tree.has_error?
+        raise SyntaxGuardError.new("the edit would introduce syntax errors")
       end
-      Result.new(result, edits.uniq.size, extracted)
+
+      @tree   = new_tree
+      @source = result
+      @edit_count += edits.uniq.size
+
+      self
     end
 
     private def nodes_for(match : TreeSitter::Match, name : String) : Array(TreeSitter::Node)

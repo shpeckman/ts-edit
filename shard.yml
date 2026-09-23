@@ -1,13 +1,10 @@
 # shard.yml
 name: ts-edit
-version: 0.3.0
-
-targets:
-  ts-edit:
-    main: src/cli.cr
+version: 0.4.0
 
 scripts:
   postinstall: make native
 
 crystal: ">= 1.10.0"
 license: MIT
+

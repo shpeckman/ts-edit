@@ -1,24 +1,36 @@
 # examples/library_usage.cr
 require "../src/ts-edit"
 
-json = File.read("#{__DIR__}/samples/config.json")
-lang = TsEdit::Languages.for_path("config.json")
+# 1. Standard replacements using the fluent interface
+json    = File.read("#{__DIR__}/samples/config.json")
+session = TsEdit::Session.new(json, TsEdit::Languages.for_path("config.json"))
 
-sorted = TsEdit::Ops.sort(json, lang, "(pair) @pair", "pair")
-puts sorted.source
+session
+  .sort("(pair) @pair", "pair")
+  .delete("(object (pair key: (string (string_content) @_k) (#eq? @_k \"debug\")) @pair . \",\"? @comma)", ["pair", "comma"])
 
-py = File.read("#{__DIR__}/samples/script.py")
-renamed = TsEdit::Ops.replace(py, TsEdit::Languages.for_path("script.py"),
-  File.read("#{__DIR__}/queries/python_rename_function.scm"), "name", "welcome")
-puts renamed.source
+puts "--- JSON after chained sort and delete ---"
+puts session.source
+puts "Total edits: #{session.edit_count}"
 
-begin
-  TsEdit::Ops.delete(py, TsEdit::Languages.for_path("script.py"),
-    "(function_definition name: (identifier) @n)", "n")
-rescue ex : TsEdit::SyntaxGuardError
-  puts "guard stopped a breaking edit: #{ex.message}"
+# 2. Block-based dynamic replacements
+py         = File.read("#{__DIR__}/samples/script.py")
+py_session = TsEdit::Session.new(py, TsEdit::Languages.for_path("script.py"))
+
+query = "(function_definition name: (identifier) @n)"
+py_session.replace(query, "n") do |match|
+  name_node = match["n"].not_nil!
+  # Use the matched text to generate the replacement string
+  "traced_#{name_node.text(py_session.source).upcase}"
 end
 
-parser = TsEdit::TreeSitter::Parser.new(TsEdit::Languages.fetch("crystal"))
-tree   = parser.parse(File.read("#{__DIR__}/samples/app.cr"))
-puts tree.root.sexp
+puts "\n--- Python after dynamic block replacement ---"
+puts py_session.source
+
+# 3. Syntax Guard protection
+begin
+  py_session.delete("(function_definition name: (identifier) @n)", "n")
+rescue ex : TsEdit::SyntaxGuardError
+  puts "\n--- Syntax Guard Intervention ---"
+  puts "Guard stopped a breaking edit: #{ex.message}"
+end
