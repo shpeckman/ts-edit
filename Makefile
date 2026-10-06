@@ -12,9 +12,13 @@ COMPILE_C = $(CC) $(CFLAGS)
 
 GRAMMAR_OBJS = $(BUILD)/json.o $(BUILD)/crystal_parser.o $(BUILD)/crystal_scanner.o $(BUILD)/crystal_unicode.o $(BUILD)/python_parser.o $(BUILD)/python_scanner.o $(BUILD)/c_parser.o $(BUILD)/bash_parser.o $(BUILD)/bash_scanner.o
 
-.PHONY: all clean native spec examples
+.PHONY: all clean native spec examples cli
 
 all: native
+
+cli: native
+	mkdir -p bin
+	$(CRYSTAL) build src/cli.cr -o bin/ts-edit
 
 native: $(BUILD)/libtree-sitter.a $(GRAMMAR_OBJS)
 

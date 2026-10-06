@@ -1,10 +1,16 @@
-# shard.yml
 name: ts-edit
-version: 0.8.0
+version: 0.9.0
+
+targets:
+  ts-edit:
+    main: src/cli.cr
+
+dependencies:
+  crystal-mcp:
+    git: https://github.com/shpeckman/crystal-mcp.git
 
 scripts:
   postinstall: make native
 
-crystal: ">= 1.10.0"
+crystal: ">= 1.21"
 license: MIT
-

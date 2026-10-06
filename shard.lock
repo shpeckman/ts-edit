@@ -1,0 +1,6 @@
+version: 2.0
+shards:
+  crystal-mcp:
+    git: https://github.com/shpeckman/crystal-mcp.git
+    version: 0.4.0+git.commit.3c3790dd31f5075dbf87803ce2ddb6556fb0983d
+
