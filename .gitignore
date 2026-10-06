@@ -6,3 +6,5 @@
 /.shards/
 /shard.lock/
 *.dwarf
+/vendor/build/
+/vendor/deps/

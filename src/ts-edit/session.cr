@@ -10,12 +10,64 @@ class TsEdit::Session
   getter tree       : TreeSitter::Tree
   getter edit_count : Int32         = 0
   getter extracted  : Array(String) = [] of String
+  getter path       : String?       = nil
   property check    : Bool
 
-  def initialize(@source : String, @language : TreeSitter::Language, @check : Bool = true)
+  @undo_stack : Array(Snapshot) = [] of Snapshot
+  @redo_stack : Array(Snapshot) = [] of Snapshot
+
+  struct Preview
+    getter source     : String
+    getter diff       : String
+    getter edit_count : Int32
+
+    def initialize(@source : String, @diff : String, @edit_count : Int32)
+    end
+  end
+
+  def initialize(@source : String, @language : TreeSitter::Language, @check : Bool = true, @path : String? = nil)
     @parser = TreeSitter::Parser.new(@language)
     @tree   = @parser.parse(@source)
     raise SyntaxGuardError.new("initial source has syntax errors") if @check && @tree.has_error?
+  end
+
+  def self.from_file(path : String, language : TreeSitter::Language? = nil, check : Bool = true) : self
+    new(File.read(path), language || Languages.for_path(path), check: check, path: path)
+  end
+
+  def self.process(path : String, check : Bool = true, & : Session ->) : self
+    session  = from_file(path, check: check)
+    original = session.source
+    yield session
+    session.write if session.source != original
+    session
+  end
+
+  def write(path : String? = nil) : self
+    target = path || @path || raise Error.new("no path associated with this session; pass one explicitly")
+    File.write(target, @source)
+    self
+  end
+
+  def transaction(& : Session ->) : self
+    snap = snapshot
+    undo = @undo_stack.dup
+    redo = @redo_stack.dup
+    begin
+      yield self
+    rescue ex : Error
+      @undo_stack = undo
+      @redo_stack = redo
+      restore(snap)
+      raise ex
+    end
+    self
+  end
+
+  def preview(& : Session ->) : Preview
+    clone = Session.new(@source, @language, check: @check)
+    yield clone
+    Preview.new(clone.source, Diff.unified(@source, clone.source), clone.edit_count)
   end
 
   def clear_extracted : self
@@ -314,6 +366,102 @@ class TsEdit::Session
     end
   end
 
+  def comment(query_source : String, capture : String | Array(String), *, prefix : String? = nil, suffix : String? = nil, skip : Int32 = 0, limit : Int32? = nil, check : Bool? = nil) : self
+    p, s = comment_delimiters(prefix, suffix)
+    wrap(query_source, capture, prefix: "#{p} ", suffix: s.empty? ? nil : " #{s}", skip: skip, limit: limit, check: check)
+  end
+
+  def uncomment(query_source : String, capture : String | Array(String), *, prefix : String? = nil, suffix : String? = nil, skip : Int32 = 0, limit : Int32? = nil, check : Bool? = nil) : self
+    p, s = comment_delimiters(prefix, suffix)
+    transform_captures(query_source, capture, skip, limit, check) do |text|
+      body = text
+      if body.starts_with?(p)
+        body = body[p.size..]
+        body = body[1..] if body.starts_with?(' ')
+      end
+      if !s.empty? && body.ends_with?(s)
+        body = body[...body.size - s.size]
+        body = body[...body.size - 1] if body.ends_with?(' ')
+      end
+      body
+    end
+  end
+
+  def indent(query_source : String, capture : String | Array(String), *, by : Int32 = 2, skip : Int32 = 0, limit : Int32? = nil, check : Bool? = nil) : self
+    pad = " " * by
+    shift_lines(query_source, capture, skip, limit, check) { |line| line.strip.empty? ? line : pad + line }
+  end
+
+  def outdent(query_source : String, capture : String | Array(String), *, by : Int32 = 2, skip : Int32 = 0, limit : Int32? = nil, check : Bool? = nil) : self
+    shift_lines(query_source, capture, skip, limit, check) do |line|
+      i = 0
+      while i < by && i < line.size && line[i] == ' '
+        i += 1
+      end
+      line[i..]
+    end
+  end
+
+  def toggle(query_source : String, capture : String | Array(String), a : String, b : String, *, skip : Int32 = 0, limit : Int32? = nil, check : Bool? = nil) : self
+    transform_captures(query_source, capture, skip, limit, check) do |text|
+      case text
+      when a then b
+      when b then a
+      else        text
+      end
+    end
+  end
+
+  private def shift_lines(query_source : String, capture : String | Array(String), skip : Int32, limit : Int32?, check : Bool?, &block : String -> String) : self
+    names = normalize(capture)
+    run(query_source, skip, limit, check_flag(check), label(names)) do |matches, src, _tree|
+      edits = [] of Edit
+      seen  = false
+      matches.each do |match|
+        match.captures.each do |cap|
+          next unless names.includes?(cap.name)
+          node  = cap.node
+          start = node.start_byte
+          while start > 0 && src.byte_at(start - 1) != 0x0A
+            start -= 1
+          end
+          next unless gap_blank?(src, start, node.start_byte)
+          text     = src.byte_slice(start, node.end_byte - start)
+          new_text = String.build { |io| text.each_line { |line| io << block.call(line) } }
+          next if new_text == text
+          seen = true
+          edits << Edit.new(start, node.end_byte, new_text)
+        end
+      end
+      {edits, seen, [] of String}
+    end
+  end
+
+  private def transform_captures(query_source : String, capture : String | Array(String), skip : Int32, limit : Int32?, check : Bool?, & : String -> String) : self
+    names = normalize(capture)
+    run(query_source, skip, limit, check_flag(check), label(names)) do |matches, src, _tree|
+      edits = [] of Edit
+      seen  = false
+      matches.each do |match|
+        match.captures.each do |cap|
+          next unless names.includes?(cap.name)
+          text     = cap.node.text(src)
+          new_text = yield text
+          next if new_text == text
+          seen = true
+          edits << Edit.new(cap.node.start_byte, cap.node.end_byte, new_text)
+        end
+      end
+      {edits, seen, [] of String}
+    end
+  end
+
+  private def comment_delimiters(prefix : String?, suffix : String?) : Tuple(String, String)
+    return {prefix, suffix || ""} if prefix
+    name = @language.name || raise Error.new("cannot infer comment delimiters for this language; pass explicit prefix:/suffix:")
+    Languages.comment_tokens(name)
+  end
+
   private def check_flag(local : Bool?) : Bool
     local.nil? ? @check : local
   end
@@ -333,13 +481,13 @@ class TsEdit::Session
   end
 
   private def run(query_source : String, skip : Int32, limit : Int32?, check : Bool, label : String, & : Array(TreeSitter::Match), String, TreeSitter::Tree -> Tuple(Array(Edit), Bool, Array(String))) : self
+    prev    = snapshot
     query   = TreeSitter::Query.new(@language, query_source)
     matches = query.matches(@tree.root, @source)
     matches = matches[skip..] if skip > 0
     matches = matches.first(limit) if limit
 
     edits, seen, extracted_texts = yield matches, @source, @tree
-    @extracted.concat(extracted_texts)
 
     raise NoMatchesError.new("no matches for capture(s) #{label}") unless seen
     return self if edits.empty?
@@ -357,6 +505,9 @@ class TsEdit::Session
     @tree   = new_tree
     @source = result
     @edit_count += edits.uniq.size
+    @extracted.concat(extracted_texts)
+    @undo_stack << prev
+    @redo_stack.clear
 
     self
   end

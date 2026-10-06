@@ -16,9 +16,10 @@ module TsEdit::TreeSitter
   end
 
   class Language
-    getter ptr : LibTreeSitter::TSLanguage
+    getter ptr  : LibTreeSitter::TSLanguage
+    getter name : String?
 
-    def initialize(@ptr : LibTreeSitter::TSLanguage)
+    def initialize(@ptr : LibTreeSitter::TSLanguage, @name : String? = nil)
     end
   end
 
@@ -163,7 +164,15 @@ module TsEdit::TreeSitter
   end
 
   class Query
+    alias Predicate = Proc(Array(String | UInt32), Array(Capture), String, Bool)
+
+    @@custom_predicates = Hash(String, Predicate).new
+
     getter capture_names : Array(String)
+
+    def self.register_predicate(name : String, &block : Predicate) : Nil
+      @@custom_predicates[name] = block
+    end
 
     def initialize(language : Language, @source : String)
       error_offset = 0_u32
@@ -285,7 +294,11 @@ module TsEdit::TreeSitter
         end
         op.starts_with?("not-") ? !result : result
       else
-        true
+        if handler = @@custom_predicates[op]?
+          handler.call(args, captures, source)
+        else
+          true
+        end
       end
     rescue ex : IndexError | ArgumentError | Regex::Error
       raise Error.new("malformed predicate ##{op}: #{ex.message}")

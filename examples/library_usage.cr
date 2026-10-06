@@ -34,3 +34,26 @@ rescue ex : TsEdit::SyntaxGuardError
   puts "\n--- Syntax Guard Intervention ---"
   puts "Guard stopped a breaking edit: #{ex.message}"
 end
+
+# 4. Dry-run preview, transactions, and file loading
+file_session = TsEdit::Session.from_file("#{__DIR__}/samples/config.json")
+
+preview = file_session.preview do |s|
+  s.sort("(pair) @p", "p")
+end
+puts "\n--- Preview diff (file_session left untouched) ---"
+puts preview.diff
+
+begin
+  file_session.transaction do |s|
+    # Deleting a key but not its value is invalid JSON: the guard aborts the whole transaction.
+    s.delete("(pair key: (string) @k)", "k")
+  end
+rescue ex : TsEdit::SyntaxGuardError
+  puts "--- Transaction rolled back ---"
+  puts "#{ex.message}; source unchanged: #{file_session.source == json}"
+end
+
+file_session.sort("(pair) @p", "p")
+file_session.undo
+puts "--- Undo restored pre-sort state: #{file_session.source == json} ---"
