@@ -57,3 +57,37 @@ end
 file_session.sort("(pair) @p", "p")
 file_session.undo
 puts "--- Undo restored pre-sort state: #{file_session.source == json} ---"
+
+# 5. Scoped edits, scope-aware rename, recipes, and workspaces
+agent = TsEdit::Session.new(py, TsEdit::Languages.for_path("script.py"))
+
+puts "\n--- Outline ---"
+agent.outline.each { |e| puts "#{e.row}: #{e.type} #{e.name}" }
+
+# Replace only inside the "greet" function
+agent.replace("((identifier) @i (#eq? @i \"name\"))", "i", "whom",
+  within: %(((function_definition name: (identifier) @_f) @fn (#eq? @_f "greet"))))
+
+# Rename a function and all its references
+agent.rename("((function_definition name: (identifier) @def) (#eq? @def \"shout\"))", "def", "bellow")
+puts "--- After scoped replace and rename ---"
+puts agent.source
+
+# Recipes: prebuilt named queries per language
+agent.replace(TsEdit::Recipes.fetch("python", "rename_function"), "name", "salute")
+puts "--- After recipe-driven rename ---"
+puts agent.source
+
+# Workspace: batch-edit multiple files on disk
+target = File.tempname("ts_edit_example", ".py")
+File.write(target, py)
+begin
+  workspace = TsEdit::Workspace.new
+  workspace.add(target)
+  workspace[target].replace(TsEdit::Recipes.fetch("python", "rename_function"), "name", "salute")
+  puts "--- Workspace dirty files before write_all: #{workspace.dirty.size} ---"
+  workspace.write_all
+  puts "--- Workspace dirty files after write_all: #{workspace.dirty.size} ---"
+ensure
+  File.delete(target) if File.exists?(target)
+end

@@ -22,6 +22,13 @@ module TsEdit::Languages
     "c"       => {"//", ""},
   }
 
+  SCOPE_TYPES = {
+    "python"  => ["function_definition", "class_definition", "module"],
+    "c"       => ["function_definition", "translation_unit"],
+    "crystal" => ["method_def", "class_def", "module_def"],
+    "bash"    => ["function_definition", "program"],
+  }
+
   @@custom            = Hash(String, Proc(TreeSitter::Language)).new
   @@custom_extensions = Hash(String, String).new
   @@custom_comments   = Hash(String, Tuple(String, String)).new
@@ -41,6 +48,10 @@ module TsEdit::Languages
   def comment_tokens(name : String) : Tuple(String, String)
     @@custom_comments[name]? || COMMENT_TOKENS[name]? ||
       raise TreeSitter::Error.new("no comment tokens known for '#{name}'; pass explicit prefix:/suffix:")
+  end
+
+  def scope_types(name : String?) : Array(String)?
+    name.try { |n| SCOPE_TYPES[n]? }
   end
 
   def fetch(name : String) : TreeSitter::Language

@@ -57,8 +57,25 @@ module TsEdit::TreeSitter
       root.has_error?
     end
 
+    def first_error : Node?
+      find_error(root)
+    end
+
     def edit(edit : LibTreeSitter::InputEdit)
       LibTreeSitter.ts_tree_edit(@ptr, pointerof(edit))
+    end
+
+    private def find_error(node : Node) : Node?
+      return node if node.error? || node.missing?
+      if node.has_error?
+        node.child_count.times do |i|
+          if child = node.child(i)
+            found = find_error(child)
+            return found if found
+          end
+        end
+      end
+      nil
     end
 
     def finalize
@@ -103,6 +120,22 @@ module TsEdit::TreeSitter
 
     def has_error? : Bool
       LibTreeSitter.ts_node_has_error(@raw)
+    end
+
+    def missing? : Bool
+      LibTreeSitter.ts_node_is_missing(@raw)
+    end
+
+    def start_point : LibTreeSitter::Point
+      LibTreeSitter.ts_node_start_point(@raw)
+    end
+
+    def end_point : LibTreeSitter::Point
+      LibTreeSitter.ts_node_end_point(@raw)
+    end
+
+    def field(name : String) : Node?
+      wrap LibTreeSitter.ts_node_child_by_field_name(@raw, name, name.bytesize.to_u32)
     end
 
     def child_count : Int32

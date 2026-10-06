@@ -82,6 +82,11 @@ lib LibTreeSitter
   fun ts_node_named_child(node : Node, index : UInt32) : Node
   fun ts_node_parent(node : Node) : Node
   fun ts_node_string(node : Node) : UInt8*
+  fun ts_node_start_point(node : Node) : Point
+  fun ts_node_end_point(node : Node) : Point
+  fun ts_node_descendant_for_point_range(node : Node, start : Point, end_point : Point) : Node
+  fun ts_node_child_by_field_name(node : Node, name : UInt8*, name_length : UInt32) : Node
+  fun ts_node_is_missing(node : Node) : Bool
 
   fun ts_query_new(language : TSLanguage, source : UInt8*, source_len : UInt32, error_offset : UInt32*, error_type : QueryError*) : TSQuery
   fun ts_query_delete(query : TSQuery)

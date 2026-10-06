@@ -6,7 +6,9 @@ require "./ts-edit/languages"
 require "./ts-edit/history"
 require "./ts-edit/diff"
 require "./ts-edit/queries"
+require "./ts-edit/recipes"
 require "./ts-edit/session"
+require "./ts-edit/workspace"
 
 module TsEdit
   VERSION = {{ `shards version "#{__DIR__}"`.chomp.stringify }}

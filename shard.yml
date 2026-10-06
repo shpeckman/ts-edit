@@ -1,6 +1,6 @@
 # shard.yml
 name: ts-edit
-version: 0.6.0
+version: 0.8.0
 
 scripts:
   postinstall: make native
