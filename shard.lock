@@ -1,0 +1,22 @@
+version: 2.0
+shards:
+  cookie_jar:
+    git: https://github.com/mamantoha/http-cookie_jar.git
+    version: 0.1.0
+
+  crest:
+    git: https://github.com/mamantoha/crest.git
+    version: 1.8.1
+
+  crystal-mcp:
+    git: https://github.com/shpeckman/crystal-mcp.git
+    version: 0.6.0+git.commit.412bc0d7dc578829013696fba4e3bf622f0862e9
+
+  http-client-digest_auth:
+    git: https://github.com/mamantoha/http-client-digest_auth.git
+    version: 0.6.0
+
+  http_proxy:
+    git: https://github.com/mamantoha/http_proxy.git
+    version: 0.16.0
+
