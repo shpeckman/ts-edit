@@ -7,7 +7,7 @@ targets:
 
 dependencies:
   crystal-mcp:
-    git: https://github.com/shpeckman/crystal-mcp.git
+    github: shpeckman/crystal-mcp
 
 scripts:
   postinstall: make native
